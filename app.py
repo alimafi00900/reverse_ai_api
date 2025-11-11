@@ -1,14 +1,9 @@
 from flask import Flask, request, jsonify
-from datetime import datetime
-import uuid
 import os
-import requests
+from provider_loader import determine_provider, get_available_providers
+from provider_handler import handle_provider_request
 
 app = Flask(__name__)
-
-# Configuration
-FORWARD_URL = os.environ.get('FORWARD_URL', None)  # Set to forward requests to another API
-FORWARD_API_KEY = os.environ.get('FORWARD_API_KEY', None)  # API key for forwarded requests
 
 # OpenAI-compatible API endpoints
 
@@ -26,6 +21,7 @@ def chat_completions():
         temperature = data.get('temperature', 1.0)
         max_tokens = data.get('max_tokens', None)
         stream = data.get('stream', False)
+        provider = data.get('provider', None)  # Explicit provider field
         
         # Validate messages
         if not messages or not isinstance(messages, list):
@@ -37,35 +33,21 @@ def chat_completions():
                 }
             }), 400
         
-        # Forward to another API if configured, otherwise use mock response
-        if FORWARD_URL:
-            return forward_request(data)
+        # Determine provider from model or explicit field
+        provider_name = determine_provider(model, provider)
         
-        # Generate a mock response
-        response_content = generate_mock_response(messages)
+        # If provider found, use provider system
+        if provider_name:
+            return handle_provider_request(data, provider_name)
         
-        # Create OpenAI-compatible response
-        response = {
-            'id': f'chatcmpl-{uuid.uuid4().hex[:29]}',
-            'object': 'chat.completion',
-            'created': int(datetime.now().timestamp()),
-            'model': model,
-            'choices': [{
-                'index': 0,
-                'message': {
-                    'role': 'assistant',
-                    'content': response_content
-                },
-                'finish_reason': 'stop'
-            }],
-            'usage': {
-                'prompt_tokens': count_tokens(str(messages)),
-                'completion_tokens': count_tokens(response_content),
-                'total_tokens': count_tokens(str(messages)) + count_tokens(response_content)
+        # No provider found - return error
+        return jsonify({
+            'error': {
+                'message': f'No provider found for model "{model}". Please specify a provider or use a supported model.',
+                'type': 'invalid_request_error',
+                'code': 'provider_not_found'
             }
-        }
-        
-        return jsonify(response)
+        }), 400
     
     except Exception as e:
         return jsonify({
@@ -151,65 +133,6 @@ def health():
     Health check endpoint
     """
     return jsonify({'status': 'healthy', 'service': 'openai-reverse-api'})
-
-
-def forward_request(data):
-    """
-    Forward request to another API endpoint
-    """
-    try:
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        
-        # Add API key if provided
-        if FORWARD_API_KEY:
-            headers['Authorization'] = f'Bearer {FORWARD_API_KEY}'
-        
-        # Forward the request
-        response = requests.post(
-            FORWARD_URL,
-            json=data,
-            headers=headers,
-            timeout=60
-        )
-        
-        # Return the response from the forwarded API
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    
-    except requests.exceptions.RequestException as e:
-        return jsonify({
-            'error': {
-                'message': f'Failed to forward request: {str(e)}',
-                'type': 'server_error',
-                'code': 'forward_error'
-            }
-        }), 500
-
-
-def generate_mock_response(messages):
-    """
-    Generate a mock response based on messages
-    In a real implementation, this would forward to another API
-    """
-    # Simple echo response - you can replace this with actual API forwarding
-    last_message = messages[-1] if messages else {}
-    user_content = last_message.get('content', '')
-    
-    # Mock response
-    if user_content:
-        return f"This is a mock response to: {user_content}"
-    return "This is a mock response from the reverse OpenAI API."
-
-
-def count_tokens(text):
-    """
-    Simple token counting (approximation)
-    In production, use tiktoken or similar library
-    """
-    # Rough approximation: 1 token ≈ 4 characters
-    return len(text) // 4
 
 
 if __name__ == '__main__':
