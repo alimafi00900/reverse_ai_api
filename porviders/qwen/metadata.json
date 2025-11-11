@@ -1,3 +1,4 @@
 {
-    "host": "chat.qwen.ai"
+    "host": "chat.qwen.ai",
+    "stream": true
 }

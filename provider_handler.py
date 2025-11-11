@@ -68,11 +68,13 @@ def build_provider_payload(openai_data: Dict, provider_config: Dict) -> Dict:
     if 'model' in openai_data:
         payload['model'] = openai_data['model']
     
-    # Update stream setting
-    if 'stream' in openai_data:
-        payload['stream'] = openai_data['stream']
-    elif 'stream' in payload:
-        payload['stream'] = True  # Default to stream
+    # Update stream setting based on metadata (provider's default behavior)
+    metadata = provider_config.get('metadata', {})
+    provider_streams = metadata.get('stream', True)  # Default to True if not specified
+    
+    # Use provider's stream setting, but allow override from request if needed
+    if 'stream' in payload:
+        payload['stream'] = provider_streams
     
     return payload
 
@@ -94,33 +96,64 @@ def parse_sse_line(line: str) -> Optional[Dict]:
 
 def convert_provider_response_to_openai(provider_data: Dict, model: str, response_id: str) -> Dict:
     """
-    Convert provider response format to OpenAI format
+    Convert provider non-streaming response format to OpenAI format
     """
-    # Handle different provider response formats
-    if 'choices' in provider_data:
-        # Already in OpenAI-like format, just ensure it's correct
-        choices = provider_data.get('choices', [])
-        if choices and 'delta' in choices[0]:
-            delta = choices[0]['delta']
+    # Handle OpenAI-like format
+    if 'choices' in provider_data and provider_data['choices']:
+        choice = provider_data['choices'][0]
+        # Check if it's a message format (non-streaming) or delta format (streaming)
+        if 'message' in choice:
+            # Already in correct format
             return {
                 'id': response_id,
-                'object': 'chat.completion.chunk',
+                'object': 'chat.completion',
+                'created': int(time.time()),
+                'model': model,
+                'choices': provider_data.get('choices', []),
+                'usage': provider_data.get('usage', {})
+            }
+        elif 'delta' in choice:
+            # Streaming format - shouldn't be here, but handle it
+            delta = choice['delta']
+            return {
+                'id': response_id,
+                'object': 'chat.completion',
                 'created': int(time.time()),
                 'model': model,
                 'choices': [{
                     'index': 0,
-                    'delta': {
+                    'message': {
                         'role': delta.get('role', 'assistant'),
                         'content': delta.get('content', '')
                     },
-                    'finish_reason': delta.get('status') == 'finished' and 'stop' or None
+                    'finish_reason': 'stop'
                 }],
-                'usage': provider_data.get('usage')
+                'usage': provider_data.get('usage', {})
             }
     
-    # Handle response.created format (initial response)
-    if 'response.created' in provider_data:
-        return None  # Skip creation messages
+    # Handle provider-specific formats
+    # If provider has a 'content' or 'text' field directly
+    if 'content' in provider_data:
+        return {
+            'id': response_id,
+            'object': 'chat.completion',
+            'created': int(time.time()),
+            'model': model,
+            'choices': [{
+                'index': 0,
+                'message': {
+                    'role': 'assistant',
+                    'content': provider_data['content']
+                },
+                'finish_reason': 'stop'
+            }],
+            'usage': provider_data.get('usage', {})
+        }
+    
+    # Default: try to return as-is if it looks like OpenAI format
+    if 'object' in provider_data:
+        provider_data['id'] = response_id
+        return provider_data
     
     return None
 
@@ -272,17 +305,37 @@ def handle_provider_request(openai_data: Dict, provider_name: str) -> Response:
     # Build payload
     payload = build_provider_payload(openai_data, provider_config)
     
-    # Check if streaming
-    stream = openai_data.get('stream', False)
+    # Check metadata to determine if provider uses streaming
+    metadata = provider_config.get('metadata', {})
+    provider_streams = metadata.get('stream', True)  # Default to True if not specified
     
-    # Make request
+    model = openai_data.get('model', 'gpt-3.5-turbo')
+    
+    # Make request with appropriate stream setting based on metadata
     try:
-        provider_response = make_provider_request(provider_config, payload, stream=True)
+        provider_response = make_provider_request(provider_config, payload, stream=provider_streams)
         provider_response.raise_for_status()
         
-        model = openai_data.get('model', 'gpt-3.5-turbo')
+        # Determine if response is actually a stream
+        # If metadata says stream=false, it's definitely not a stream
+        if not provider_streams:
+            is_actually_stream = False
+        else:
+            # Check Content-Type header to verify
+            content_type = provider_response.headers.get('Content-Type', '').lower()
+            is_actually_stream = 'text/event-stream' in content_type or 'event-stream' in content_type
+            
+            # If metadata says stream but response isn't actually a stream, check Transfer-Encoding
+            if not is_actually_stream:
+                transfer_encoding = provider_response.headers.get('Transfer-Encoding', '').lower()
+                is_actually_stream = 'chunked' in transfer_encoding
+            
+            # If still not sure but metadata says stream, trust metadata
+            if not is_actually_stream and provider_streams:
+                is_actually_stream = True
         
-        if stream:
+        # If provider returns a stream, always stream it directly to the client
+        if is_actually_stream:
             # Return streaming response
             return Response(
                 stream_with_context(stream_provider_response(provider_response, model, True)),
@@ -294,14 +347,28 @@ def handle_provider_request(openai_data: Dict, provider_name: str) -> Response:
                 }
             )
         else:
-            # Collect all chunks and return as single response
+            # Provider returned non-streaming response, convert to OpenAI format
             from flask import jsonify
-            result = None
-            for chunk in stream_provider_response(provider_response, model, False):
-                if isinstance(chunk, dict):
-                    result = chunk
-                    break  # First dict is the final result
-            return jsonify(result) if result else jsonify({'error': 'No response received'}), 500
+            try:
+                response_data = provider_response.json()
+                response_id = f'chatcmpl-{uuid.uuid4().hex[:29]}'
+                
+                # Convert provider response to OpenAI format
+                openai_response = convert_provider_response_to_openai(response_data, model, response_id)
+                
+                if openai_response:
+                    return jsonify(openai_response), provider_response.status_code
+                else:
+                    # If conversion failed, try to return as-is
+                    return jsonify(response_data), provider_response.status_code
+            except Exception as e:
+                return jsonify({
+                    'error': {
+                        'message': f'Failed to parse provider response: {str(e)}',
+                        'type': 'server_error',
+                        'code': 'parse_error'
+                    }
+                }), 500
     
     except requests.exceptions.RequestException as e:
         from flask import jsonify

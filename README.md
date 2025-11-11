@@ -70,8 +70,10 @@ The API supports a dynamic provider system that routes requests to different AI 
    - Model name inference (e.g., models containing "qwen" → qwen provider)
 
 2. **Provider Configuration**: Each provider has a folder in `porviders/` containing:
-   - `metadata.json` - Provider host/endpoint information
-   - `header.txt` - HTTP headers to send with requests
+   - `metadata.json` - Provider host/endpoint information and stream configuration
+     - `host`: Provider API hostname (e.g., `"chat.qwen.ai"`)
+     - `stream`: Boolean indicating if provider returns streaming responses (default: `true`)
+   - `header.txt` - HTTP headers to send with requests (used exactly as provided)
    - `payload.json` - Request payload template
    - `reasponse_example.md` - Example response format (for reference)
 
@@ -80,7 +82,11 @@ The API supports a dynamic provider system that routes requests to different AI 
    - Timestamps are added with gaps between messages
    - Model information is updated
 
-4. **Streaming**: If the provider returns a stream, it's automatically converted to OpenAI-compatible SSE format
+4. **Streaming**: 
+   - The API checks `metadata.json` to determine if the provider uses streaming
+   - If `stream: true` in metadata, the response is streamed directly to the client
+   - If `stream: false` in metadata, the response is returned as a single JSON object
+   - Streaming responses are automatically converted to OpenAI-compatible SSE format
 
 ### Using Providers
 
@@ -115,7 +121,15 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 
 1. Create a folder in `porviders/` (e.g., `porviders/myprovider/`)
 2. Add the required files:
-   - `metadata.json`: `{"host": "api.example.com"}`
+   - `metadata.json`: 
+     ```json
+     {
+       "host": "api.example.com",
+       "stream": true
+     }
+     ```
+     - `host`: The provider's API hostname
+     - `stream`: Set to `true` if provider returns streaming responses, `false` for non-streaming
    - `header.txt`: HTTP headers (first line should be: `METHOD /path HTTP/1.1`)
    - `payload.json`: Request payload template with message structure
    - `reasponse_example.md`: Example response (optional, for reference)
