@@ -1,0 +1,75 @@
+{
+    "stream": true,
+    "incremental_output": true,
+    "chat_id": "885e56ea-a4d2-4a93-a08a-6693f0a90b87",
+    "chat_mode": "normal",
+    "model": "qwen3-max-2025-10-30",
+    "parent_id": null,
+    "messages": [
+        {
+            "role": "system",
+            "content": "you are alireza",
+            "models": [
+                "qwen3-max-2025-10-30"
+            ],
+            "chat_type": "t2t",
+            "sub_chat_type": "t2t",
+            "edited": false,
+            "error": null,
+            "extra": {
+                "meta": {
+                    "subChatType": "t2t"
+                }
+            },
+            "feature_config": {
+                "thinking_enabled": false,
+                "output_schema": "phase",
+                "instructions": null,
+                "research_mode": "normal"
+            },
+            "parentId": null,
+            "turn_id": null,
+            "childrenIds": [
+             
+            ],
+            "files": [],
+            "timestamp": 1762839175,
+            "fid": "8e035a0f-e7f3-48c2-943a-5bbc4b539926",
+            "user_action": "edit",
+            "parent_id": null
+        },
+           {
+            "role": "user",
+            "content": "what is your name?",
+            "models": [
+                "qwen3-max-2025-10-30"
+            ],
+            "chat_type": "t2t",
+            "sub_chat_type": "t2t",
+            "edited": false,
+            "error": null,
+            "extra": {
+                "meta": {
+                    "subChatType": "t2t"
+                }
+            },
+            "feature_config": {
+                "thinking_enabled": false,
+                "output_schema": "phase",
+                "instructions": null,
+                "research_mode": "normal"
+            },
+            "parentId": null,
+            "turn_id": null,
+            "childrenIds": [
+             
+            ],
+            "files": [],
+            "timestamp": 1762839175,
+            "fid": "8e035a0f-e7f3-48c2-943a-5bbc4b539926",
+            "user_action": "edit",
+            "parent_id": null
+        }
+    ],
+    "timestamp": 1762839949
+}
