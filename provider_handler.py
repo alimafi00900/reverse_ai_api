@@ -199,7 +199,8 @@ def stream_provider_response(provider_response: requests.Response, model: str, s
     if stream_requested:
         yield f"data: {json.dumps({'id': response_id, 'object': 'chat.completion.chunk', 'created': int(time.time()), 'model': model, 'choices': [{'index': 0, 'delta': {'role': 'assistant', 'content': ''}, 'finish_reason': None}]})}\n\n"
     
-    # Parse SSE stream
+    # Parse SSE stream in real-time
+    # iter_lines() reads line by line as they arrive from the provider
     for line in provider_response.iter_lines(decode_unicode=True):
         if not line:
             continue
@@ -215,7 +216,8 @@ def stream_provider_response(provider_response: requests.Response, model: str, s
         # Convert to OpenAI format
         if 'choices' in parsed:
             choices = parsed.get('choices', [])
-            if choices and 'delta' in choices[0]:
+            # Ensure choices array exists and has at least one element
+            if choices and len(choices) > 0 and isinstance(choices[0], dict) and 'delta' in choices[0]:
                 delta = choices[0]['delta']
                 content = delta.get('content', '')
                 status = delta.get('status', 'typing')
@@ -224,6 +226,15 @@ def stream_provider_response(provider_response: requests.Response, model: str, s
                     accumulated_content += content
                 
                 if stream_requested:
+                    # Build delta object - ensure it always has required structure
+                    # OpenAI format: delta should have 'role' in first chunk, 'content' in subsequent chunks
+                    delta_obj = {}
+                    # Include role if present (usually in first chunk)
+                    if delta.get('role'):
+                        delta_obj['role'] = delta.get('role', 'assistant')
+                    # Always include content, even if empty (OpenAI format)
+                    delta_obj['content'] = content
+                    
                     openai_chunk = {
                         'id': response_id,
                         'object': 'chat.completion.chunk',
@@ -231,10 +242,7 @@ def stream_provider_response(provider_response: requests.Response, model: str, s
                         'model': model,
                         'choices': [{
                             'index': 0,
-                            'delta': {
-                                'role': delta.get('role', 'assistant'),
-                                'content': content
-                            },
+                            'delta': delta_obj,
                             'finish_reason': None
                         }]
                     }
