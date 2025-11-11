@@ -194,10 +194,7 @@ def stream_provider_response(provider_response: requests.Response, model: str, s
     response_id = f'chatcmpl-{uuid.uuid4().hex[:29]}'
     accumulated_content = ""
     usage = None
-    
-    # Set up SSE streaming headers
-    if stream_requested:
-        yield f"data: {json.dumps({'id': response_id, 'object': 'chat.completion.chunk', 'created': int(time.time()), 'model': model, 'choices': [{'index': 0, 'delta': {'role': 'assistant', 'content': ''}, 'finish_reason': None}]})}\n\n"
+    first_chunk_sent = False
     
     # Parse SSE stream in real-time
     # iter_lines() reads line by line as they arrive from the provider
@@ -226,14 +223,20 @@ def stream_provider_response(provider_response: requests.Response, model: str, s
                     accumulated_content += content
                 
                 if stream_requested:
-                    # Build delta object - ensure it always has required structure
-                    # OpenAI format: delta should have 'role' in first chunk, 'content' in subsequent chunks
+                    # Build delta object - OpenAI format
+                    # First chunk should have only 'role', subsequent chunks have 'content'
                     delta_obj = {}
-                    # Include role if present (usually in first chunk)
-                    if delta.get('role'):
-                        delta_obj['role'] = delta.get('role', 'assistant')
-                    # Always include content, even if empty (OpenAI format)
-                    delta_obj['content'] = content
+                    
+                    # Send role only in the very first chunk
+                    if not first_chunk_sent:
+                        delta_obj['role'] = 'assistant'
+                        # Only include content if not empty
+                        if content:
+                            delta_obj['content'] = content
+                        first_chunk_sent = True
+                    else:
+                        # Subsequent chunks: only include content
+                        delta_obj['content'] = content
                     
                     openai_chunk = {
                         'id': response_id,
