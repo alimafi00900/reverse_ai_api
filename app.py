@@ -66,39 +66,12 @@ def list_models():
     """
     models = [
         {
-            'id': 'gpt-4',
+            'id': 'qwen3-max-2025-10-30',
             'object': 'model',
             'created': 1677610602,
-            'owned_by': 'openai',
+            'owned_by': 'qwen',
             'permission': [],
             'root': 'gpt-4',
-            'parent': None
-        },
-        {
-            'id': 'gpt-4-turbo',
-            'object': 'model',
-            'created': 1692904200,
-            'owned_by': 'openai',
-            'permission': [],
-            'root': 'gpt-4-turbo',
-            'parent': None
-        },
-        {
-            'id': 'gpt-3.5-turbo',
-            'object': 'model',
-            'created': 1677610602,
-            'owned_by': 'openai',
-            'permission': [],
-            'root': 'gpt-3.5-turbo',
-            'parent': None
-        },
-        {
-            'id': 'gpt-3.5-turbo-16k',
-            'object': 'model',
-            'created': 1685474247,
-            'owned_by': 'openai',
-            'permission': [],
-            'root': 'gpt-3.5-turbo-16k',
             'parent': None
         }
     ]
@@ -136,6 +109,6 @@ def health():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5102))
     app.run(host='0.0.0.0', port=port, debug=True)
 

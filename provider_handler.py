@@ -64,9 +64,9 @@ def build_provider_payload(openai_data: Dict, provider_config: Dict) -> Dict:
     if 'timestamp' in payload:
         payload['timestamp'] = int(time.time())
     
-    # Update model if specified in OpenAI request
-    if 'model' in openai_data:
-        payload['model'] = openai_data['model']
+    # # Update model if specified in OpenAI request
+    # if 'model' in openai_data:
+    #     payload['model'] = openai_data['model']
     
     # Update stream setting based on metadata (provider's default behavior)
     metadata = provider_config.get('metadata', {})
